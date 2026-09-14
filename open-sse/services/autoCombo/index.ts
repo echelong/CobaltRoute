@@ -17,18 +17,6 @@ export { SelfHealingManager, getSelfHealingManager } from "./selfHealing";
 export { MODE_PACKS, getModePack, getModePackNames } from "./modePacks";
 export { selectProvider, type AutoComboConfig, type SelectionResult } from "./engine";
 export {
-  selectAdaptiveCandidate,
-  recordAdaptiveOutcome,
-  getAdaptiveLearningSnapshot,
-  getAdaptiveStorePath,
-  flushAdaptiveLearningNow,
-  resetAdaptiveLearning,
-  type AdaptiveRoutingContext,
-  type AdaptiveLearningEntry,
-  type AdaptiveOutcomeInput,
-  type AdaptiveSelection,
-} from "./adaptiveRouter";
-export {
   runChaosPanel,
   handleChaosChat,
   serializeChaosPart,
