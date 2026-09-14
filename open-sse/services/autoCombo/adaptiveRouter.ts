@@ -100,7 +100,7 @@ function persistenceEnabled(): boolean {
 
 export function getAdaptiveStorePath(): string {
   const configured = process.env.COBALTROUTE_ADAPTIVE_STORE_PATH?.trim();
-  return configured || join(process.cwd(), ".cobaltroute", "adaptive-learning.json");
+  return configured || join(process.cwd(), ".data", "cobaltroute", "adaptive-learning.json");
 }
 
 function defaultEntry(taskType: string, provider: string, model: string): AdaptiveLearningEntry {
@@ -128,8 +128,8 @@ function sanitizePersistedEntry(value: unknown): AdaptiveLearningEntry | null {
   if (typeof raw.provider !== "string" || typeof raw.model !== "string") return null;
 
   const taskType = normalizeTaskType(raw.taskType);
-  const finite = (number: unknown, fallback = 0): number =>
-    typeof number === "number" && Number.isFinite(number) && number >= 0 ? number : fallback;
+  const finite = (value: unknown, fallback = 0): number =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 
   return {
     taskType,
@@ -219,9 +219,8 @@ function schedulePersist(): void {
     persistNow();
   }, 250);
 
-  if (typeof persistTimer === "object" && persistTimer && "unref" in persistTimer) {
-    persistTimer.unref();
-  }
+  const timer = persistTimer as unknown as { unref?: () => void };
+  timer.unref?.();
 }
 
 export function flushAdaptiveLearningNow(): void {
