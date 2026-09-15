@@ -9,7 +9,7 @@
  *   - LatencyStrategy: prioritizes low p95 latency with reliability weighting
  *   - SLAStrategy: prefers candidates that satisfy latency/error/cost SLOs
  *   - LKGPStrategy: tries last known good provider first
- *   - AdaptiveStrategy: CobaltRoute task-aware learning + quota inventory + UCB exploration
+ *   - AdaptiveStrategy: CobaltRoute task-aware hybrid local/cloud learning + quota inventory + UCB exploration
  */
 
 import type { ProviderCandidate, ScoredProvider, ScoringWeights } from "./scoring.ts";
@@ -18,7 +18,7 @@ import { getTaskFitness } from "./taskFitness.ts";
 import { clamp01 } from "../../utils/number.ts";
 import { rankBySpeed } from "./speedRanking.ts";
 import type { SpeedCandidate } from "./speedRanking.ts";
-import { selectQuotaAwareAdaptiveCandidate } from "./freeQuotaIntelligence.ts";
+import { selectHybridLocalCloudCandidate } from "./hybridLocalCloud.ts";
 
 export interface SlaRoutingPolicy {
   targetP95Ms?: number;
@@ -369,15 +369,15 @@ class LKGPStrategyImpl implements RouterStrategy {
   }
 }
 
-// ── AdaptiveStrategy: Cobalt task-aware learning + quota inventory ───────────
+// ── AdaptiveStrategy: Cobalt task-aware learning + quota inventory + hybrid routing ──
 
 class AdaptiveStrategyImpl implements RouterStrategy {
   readonly name = "adaptive";
   readonly description =
-    "CobaltRoute task-aware adaptive routing with free-quota inventory, persistent outcomes and UCB exploration";
+    "CobaltRoute task-aware adaptive routing with hybrid local/cloud choice, free-quota inventory, persistent outcomes and UCB exploration";
 
   select(pool: ProviderCandidate[], context: RoutingContext): RoutingDecision {
-    const selected = selectQuotaAwareAdaptiveCandidate(pool, {
+    const selected = selectHybridLocalCloudCandidate(pool, {
       taskType: context.taskType,
       weights: context.weights,
       explorationRate: context.explorationRate,
@@ -418,6 +418,9 @@ strategyRegistry.set("sla", slaStrategy); // alias
 strategyRegistry.set("lkgp", lkgpStrategy);
 strategyRegistry.set("adaptive", adaptiveStrategy);
 strategyRegistry.set("cobalt", adaptiveStrategy); // CobaltRoute alias
+strategyRegistry.set("hybrid", adaptiveStrategy); // CobaltRoute v8 alias
+strategyRegistry.set("local-cloud", adaptiveStrategy);
+strategyRegistry.set("cobalt-hybrid", adaptiveStrategy);
 strategyRegistry.set("race", adaptiveStrategy); // v5 fallback when a race cannot form
 strategyRegistry.set("cobalt-race", adaptiveStrategy);
 strategyRegistry.set("adaptive-race", adaptiveStrategy);
