@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { on } from "@/lib/events/eventBus";
 import type { ProviderCandidate, ScoringWeights } from "./scoring.ts";
 import { scorePool } from "./scoring.ts";
 import { getTaskFitness } from "./taskFitness.ts";
@@ -26,6 +27,12 @@ const MAX_ENTRIES = 5_000;
 const REWARD_ALPHA = 0.25;
 const PROXY_ALPHA = 0.15;
 const DEFAULT_EXPLORATION_RATE = 0.08;
+const AUTOMATIC_SUCCESS_REWARD = 0.7;
+const AUTOMATIC_QUALITY_FAILURE_REWARD = 0.08;
+const AUTOMATIC_OPERATIONAL_FAILURE_REWARD = 0.48;
+const AUTOMATIC_UNKNOWN_FAILURE_REWARD = 0.3;
+const PENDING_SELECTION_TTL_MS = 15 * 60 * 1000;
+const MAX_PENDING_PER_MODEL = 64;
 
 export interface AdaptiveRoutingContext {
   taskType: string;
@@ -67,19 +74,78 @@ export interface AdaptiveSelection {
   candidatesConsidered: number;
 }
 
+export interface AdaptiveBrainLeader {
+  taskType: string;
+  provider: string;
+  model: string;
+  learnedScore: number;
+  rewardMean: number;
+  rewardEwma: number;
+  selections: number;
+  observations: number;
+  positiveOutcomes: number;
+  negativeOutcomes: number;
+  updatedAt: number;
+}
+
+export interface AdaptiveBrainSnapshot {
+  generatedAt: number;
+  summary: {
+    taskCount: number;
+    modelCount: number;
+    providerCount: number;
+    selections: number;
+    observations: number;
+    proxyObservations: number;
+    positiveOutcomes: number;
+    negativeOutcomes: number;
+  };
+  leaders: AdaptiveBrainLeader[];
+  tasks: Array<{
+    taskType: string;
+    modelCount: number;
+    selections: number;
+    observations: number;
+    leader: AdaptiveBrainLeader | null;
+  }>;
+}
+
 interface PersistedStore {
   version: number;
   updatedAt: number;
   entries: AdaptiveLearningEntry[];
 }
 
+interface PendingSelection {
+  taskType: string;
+  provider: string;
+  model: string;
+  selectedAt: number;
+}
+
 const entries = new Map<string, AdaptiveLearningEntry>();
+const pendingSelections = new Map<string, PendingSelection[]>();
 let loaded = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function normalizeTaskType(taskType: string | null | undefined): string {
   const normalized = String(taskType || "default").trim().toLowerCase();
   return normalized || "default";
+}
+
+function normalizeIdentity(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizedModelForProvider(provider: string, model: string): string {
+  const providerId = normalizeIdentity(provider);
+  const raw = normalizeIdentity(model);
+  if (!providerId || !raw) return raw;
+  for (const separator of ["/", ":"]) {
+    const prefix = `${providerId}${separator}`;
+    if (raw.startsWith(prefix)) return raw.slice(prefix.length);
+  }
+  return raw;
 }
 
 function learningKey(taskType: string, provider: string, model: string): string {
@@ -94,8 +160,16 @@ function executionKey(candidate: {
   return `${candidate.provider}\u0000${candidate.model}\u0000${candidate.connectionId || ""}`;
 }
 
+function pendingKey(provider: string, model: string): string {
+  return `${normalizeIdentity(provider)}\u0000${normalizedModelForProvider(provider, model)}`;
+}
+
 function persistenceEnabled(): boolean {
   return process.env.COBALTROUTE_ADAPTIVE_PERSIST !== "0";
+}
+
+function automaticFeedbackEnabled(): boolean {
+  return process.env.COBALTROUTE_AUTOMATIC_FEEDBACK !== "0";
 }
 
 export function getAdaptiveStorePath(): string {
@@ -231,12 +305,38 @@ export function flushAdaptiveLearningNow(): void {
   persistNow();
 }
 
+function registerPendingSelection(taskType: string, provider: string, model: string): void {
+  const key = pendingKey(provider, model);
+  const now = Date.now();
+  const queue = (pendingSelections.get(key) || []).filter(
+    (selection) => now - selection.selectedAt <= PENDING_SELECTION_TTL_MS
+  );
+  queue.push({ taskType, provider, model, selectedAt: now });
+  if (queue.length > MAX_PENDING_PER_MODEL) {
+    queue.splice(0, queue.length - MAX_PENDING_PER_MODEL);
+  }
+  pendingSelections.set(key, queue);
+}
+
+function consumePendingSelection(provider: string, model: string): PendingSelection | null {
+  const key = pendingKey(provider, model);
+  const now = Date.now();
+  const queue = (pendingSelections.get(key) || []).filter(
+    (selection) => now - selection.selectedAt <= PENDING_SELECTION_TTL_MS
+  );
+  const selection = queue.shift() || null;
+  if (queue.length > 0) pendingSelections.set(key, queue);
+  else pendingSelections.delete(key);
+  return selection;
+}
+
 function recordSelection(taskType: string, provider: string, model: string): AdaptiveLearningEntry {
   const entry = getOrCreate(taskType, provider, model);
   const now = Date.now();
   entry.selections += 1;
   entry.lastSelectedAt = now;
   entry.updatedAt = now;
+  registerPendingSelection(taskType, provider, model);
   schedulePersist();
   return entry;
 }
@@ -425,6 +525,158 @@ export function getAdaptiveLearningSnapshot(taskType?: string): AdaptiveLearning
     );
 }
 
+function toBrainLeader(entry: AdaptiveLearningEntry): AdaptiveBrainLeader {
+  return {
+    taskType: entry.taskType,
+    provider: entry.provider,
+    model: entry.model,
+    learnedScore: learnedSignal(entry),
+    rewardMean: entry.rewardMean,
+    rewardEwma: entry.rewardEwma,
+    selections: entry.selections,
+    observations: entry.observations,
+    positiveOutcomes: entry.positiveOutcomes,
+    negativeOutcomes: entry.negativeOutcomes,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+export function getAdaptiveBrainSnapshot(): AdaptiveBrainSnapshot {
+  const snapshot = getAdaptiveLearningSnapshot();
+  const taskGroups = new Map<string, AdaptiveLearningEntry[]>();
+  const providers = new Set<string>();
+  const models = new Set<string>();
+
+  let selections = 0;
+  let observations = 0;
+  let proxyObservations = 0;
+  let positiveOutcomes = 0;
+  let negativeOutcomes = 0;
+
+  for (const entry of snapshot) {
+    providers.add(entry.provider);
+    models.add(`${entry.provider}\u0000${entry.model}`);
+    selections += entry.selections;
+    observations += entry.observations;
+    proxyObservations += entry.proxyObservations;
+    positiveOutcomes += entry.positiveOutcomes;
+    negativeOutcomes += entry.negativeOutcomes;
+    const group = taskGroups.get(entry.taskType) || [];
+    group.push(entry);
+    taskGroups.set(entry.taskType, group);
+  }
+
+  const tasks = [...taskGroups.entries()]
+    .map(([taskType, group]) => {
+      const ranked = [...group].sort(
+        (a, b) =>
+          learnedSignal(b) - learnedSignal(a) ||
+          b.observations - a.observations ||
+          b.selections - a.selections
+      );
+      const leader = ranked[0] ? toBrainLeader(ranked[0]) : null;
+      return {
+        taskType,
+        modelCount: group.length,
+        selections: group.reduce((sum, entry) => sum + entry.selections, 0),
+        observations: group.reduce((sum, entry) => sum + entry.observations, 0),
+        leader,
+      };
+    })
+    .sort((a, b) => b.observations - a.observations || b.selections - a.selections);
+
+  const leaders = snapshot
+    .map(toBrainLeader)
+    .sort(
+      (a, b) =>
+        b.learnedScore - a.learnedScore ||
+        b.observations - a.observations ||
+        b.selections - a.selections
+    )
+    .slice(0, 50);
+
+  return {
+    generatedAt: Date.now(),
+    summary: {
+      taskCount: taskGroups.size,
+      modelCount: models.size,
+      providerCount: providers.size,
+      selections,
+      observations,
+      proxyObservations,
+      positiveOutcomes,
+      negativeOutcomes,
+    },
+    leaders,
+    tasks,
+  };
+}
+
+function automaticFailureReward(error: string): number {
+  const normalized = String(error || "").toLowerCase();
+  if (
+    /quality|malformed|invalid tool|tool.*invalid|schema|empty response|empty content/.test(normalized)
+  ) {
+    return AUTOMATIC_QUALITY_FAILURE_REWARD;
+  }
+  if (
+    /429|rate.?limit|quota|credit|cooldown|timeout|timed out|network|capacity|unavailable|503|504/.test(
+      normalized
+    )
+  ) {
+    return AUTOMATIC_OPERATIONAL_FAILURE_REWARD;
+  }
+  return AUTOMATIC_UNKNOWN_FAILURE_REWARD;
+}
+
+export function recordAutomaticAdaptiveOutcome(input: {
+  provider: string;
+  model: string;
+  outcome: "success" | "failure";
+  error?: string;
+}): AdaptiveLearningEntry | null {
+  if (!automaticFeedbackEnabled()) return null;
+  const pending = consumePendingSelection(input.provider, input.model);
+  if (!pending) return null;
+  return recordAdaptiveOutcome({
+    taskType: pending.taskType,
+    provider: pending.provider,
+    model: pending.model,
+    reward:
+      input.outcome === "success"
+        ? AUTOMATIC_SUCCESS_REWARD
+        : automaticFailureReward(input.error || ""),
+  });
+}
+
+declare global {
+  var __cobaltAdaptiveOutcomeListenersInitialized: boolean | undefined;
+}
+
+function initAutomaticOutcomeLearning(): void {
+  if (globalThis.__cobaltAdaptiveOutcomeListenersInitialized) return;
+  globalThis.__cobaltAdaptiveOutcomeListenersInitialized = true;
+
+  on("combo.target.succeeded", (payload) => {
+    recordAutomaticAdaptiveOutcome({
+      provider: payload.provider,
+      model: payload.model,
+      outcome: "success",
+    });
+  });
+
+  on("combo.target.failed", (payload) => {
+    recordAutomaticAdaptiveOutcome({
+      provider: payload.provider,
+      model: payload.model,
+      outcome: "failure",
+      error: payload.error,
+    });
+  });
+}
+
+initAutomaticOutcomeLearning();
+
 /** Test/ops hook. Does not delete the persisted file. */
 export function resetAdaptiveLearning(): void {
   if (persistTimer) {
@@ -432,5 +684,6 @@ export function resetAdaptiveLearning(): void {
     persistTimer = null;
   }
   entries.clear();
+  pendingSelections.clear();
   loaded = true;
 }
