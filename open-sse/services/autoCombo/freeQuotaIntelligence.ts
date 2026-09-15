@@ -17,6 +17,7 @@ import type { ProviderCandidate } from "./scoring.ts";
 import { getTaskFitness } from "./taskFitness.ts";
 import { clamp01 } from "../../utils/number.ts";
 import { selectAdaptiveCandidate, type AdaptiveSelection } from "./adaptiveRouter.ts";
+import { filterFreeModelQualificationPool } from "@/lib/discovery/freeModelQualification";
 
 const MAX_OBSERVATIONS = 500;
 const SCARCE_THRESHOLD = 0.2;
@@ -331,11 +332,20 @@ export function getFreeQuotaRacePool(
   pool: ProviderCandidate[],
   taskType: string
 ): ProviderCandidate[] {
+  // V6 lets Race trial at most one probation model beside trusted/qualified
+  // capacity. Quarantined discoveries never enter the race.
+  const qualificationPool = filterFreeModelQualificationPool(pool, {
+    allowProbation: true,
+    maxProbation: 1,
+  });
   if (!enabled()) {
-    const healthy = pool.filter((candidate) => candidate.circuitBreakerState !== "OPEN");
-    return healthy.length > 0 ? healthy : pool;
+    const healthy = qualificationPool.filter(
+      (candidate) => candidate.circuitBreakerState !== "OPEN"
+    );
+    return healthy.length > 0 ? healthy : qualificationPool;
   }
-  return applyInventoryPolicy(assessPool(pool, normalizeTaskType(taskType)), taskType).candidates;
+  return applyInventoryPolicy(assessPool(qualificationPool, normalizeTaskType(taskType)), taskType)
+    .candidates;
 }
 
 /**
@@ -349,12 +359,15 @@ export function selectQuotaAwareAdaptiveCandidate(
   pool: ProviderCandidate[],
   context: FreeQuotaIntelligenceContext
 ): AdaptiveSelection {
+  // Normal adaptive routing holds novel probation models whenever a trusted or
+  // already-qualified alternative exists. Race mode owns controlled probation.
+  const qualificationPool = filterFreeModelQualificationPool(pool);
   if (!enabled()) {
-    return selectAdaptiveCandidate(pool, context);
+    return selectAdaptiveCandidate(qualificationPool, context);
   }
 
   const taskType = normalizeTaskType(context.taskType);
-  const assessed = assessPool(pool, taskType);
+  const assessed = assessPool(qualificationPool, taskType);
   const policy = applyInventoryPolicy(assessed, taskType);
   const selected = selectAdaptiveCandidate(policy.candidates, context);
 

@@ -22,6 +22,7 @@ import {
   type AdaptiveLearningEntry,
 } from "./adaptiveRouter.ts";
 import { getFreeQuotaRacePool, scoreFreeQuotaCandidate } from "./freeQuotaIntelligence.ts";
+import { getFreeModelQualificationState } from "@/lib/discovery/freeModelQualification";
 
 const MAX_RACE_WIDTH = 3;
 const MIN_RACE_WIDTH = 2;
@@ -379,6 +380,26 @@ export function planMultiModelRace(
     if (chosenKeys.has(key)) continue;
     chosen.push(candidate);
     chosenKeys.add(key);
+  }
+
+  // V6 qualification lane: when the eligible pool contains one probation model,
+  // ensure a race with trusted capacity actually exercises it instead of letting
+  // pure ranking permanently starve the candidate of verification evidence.
+  const probationCandidate = uniqueModels.find(
+    (candidate) =>
+      getFreeModelQualificationState(candidate.provider, candidate.model) === "probation" &&
+      !chosen.some(
+        (selected) =>
+          modelKey(selected.provider, selected.model) ===
+          modelKey(candidate.provider, candidate.model)
+      )
+  );
+  const hasTrustedRaceMember = chosen.some((candidate) => {
+    const state = getFreeModelQualificationState(candidate.provider, candidate.model);
+    return state === "trusted" || state === "qualified";
+  });
+  if (probationCandidate && chosen.length >= 2 && hasTrustedRaceMember) {
+    chosen[chosen.length - 1] = probationCandidate;
   }
 
   const planId = nextPlanId();

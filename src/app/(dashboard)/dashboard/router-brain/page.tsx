@@ -2,6 +2,7 @@ import RouterBrainClient from "./RouterBrainClient";
 import CodingFeedbackPanel from "./CodingFeedbackPanel";
 import FreeQuotaIntelligencePanel from "./FreeQuotaIntelligencePanel";
 import MultiModelRacePanel from "./MultiModelRacePanel";
+import FreeModelDiscoveryPanel from "./FreeModelDiscoveryPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default function RouterBrainPage() {
       <CodingFeedbackPanel />
       <FreeQuotaIntelligencePanel />
       <MultiModelRacePanel />
+      <FreeModelDiscoveryPanel />
     </>
   );
 }

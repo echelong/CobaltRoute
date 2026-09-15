@@ -22,6 +22,8 @@ export interface SyncedAvailableModel {
   // #4264: image-input capability captured at sync time (e.g. OpenRouter
   // `architecture.input_modalities`/`modality`) so the catalog can surface vision.
   supportsVision?: boolean;
+  /** Explicit provider/custom metadata that this model is free to use. */
+  isFree?: boolean;
 }
 
 export type SyncedAvailableModelInput = Omit<SyncedAvailableModel, "source"> & {
@@ -87,6 +89,7 @@ function normalizeSyncedAvailableModel(model: unknown): SyncedAvailableModel | n
     ...(typeof record.supportsTools === "boolean" ? { supportsTools: record.supportsTools } : {}),
     ...(typeof record.supportsVideo === "boolean" ? { supportsVideo: record.supportsVideo } : {}),
     ...(record.supportsVision === true ? { supportsVision: true } : {}),
+    ...(typeof record.isFree === "boolean" ? { isFree: record.isFree } : {}),
   };
 }
 
