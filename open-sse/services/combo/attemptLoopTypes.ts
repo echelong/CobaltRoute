@@ -66,6 +66,9 @@ export type AttemptLoopDeps = {
     maxGlobalAttempts?: unknown;
     hedging?: boolean;
     hedgeDelayMs?: unknown;
+    cobaltRaceWidth?: unknown;
+    cobaltRaceTaskType?: unknown;
+    cobaltRacePlanId?: unknown;
   };
   log: ComboLogger;
   settings: Record<string, unknown> | null;

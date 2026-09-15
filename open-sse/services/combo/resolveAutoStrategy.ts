@@ -11,6 +11,12 @@ import {
   parseRequestBudgetFallback,
 } from "../autoCombo/requestControls.ts";
 import { selectWithStrategy } from "../autoCombo/routerStrategy.ts";
+import {
+  isMultiModelRaceStrategy,
+  planMultiModelRace,
+  recordMultiModelRaceCancelled,
+  type MultiModelRacePlan,
+} from "../autoCombo/multiModelRace.ts";
 import { buildComplexityRoutingHint } from "../autoCombo/complexityRouter";
 import { getModePack } from "../autoCombo/modePacks.ts";
 import { recordComboIntent } from "../comboMetrics.ts";
@@ -64,7 +70,13 @@ export interface ResolveAutoStrategyDeps {
   body: Record<string, unknown>;
   combo: ComboLike;
   settings: Record<string, unknown> | null | undefined;
-  config: { complexityAwareRouting?: boolean; compatFilterFailOpen?: boolean };
+  config: {
+    complexityAwareRouting?: boolean;
+    compatFilterFailOpen?: boolean;
+    cobaltRaceWidth?: number;
+    cobaltRaceTaskType?: string;
+    cobaltRacePlanId?: string;
+  };
   relayOptions?: {
     bypassProviderQuotaPolicy?: boolean;
     sessionId?: string | null;
@@ -360,8 +372,24 @@ export async function resolveAutoStrategyOrder(
     let selectedModel: string | null = null;
     let selectedConnectionId: string | null = null;
     let selectionReason = "";
+    let racePlan: MultiModelRacePlan | null = null;
 
-    if (routingStrategy !== "rules") {
+    if (isMultiModelRaceStrategy(routingStrategy)) {
+      racePlan = planMultiModelRace(routableCandidates, {
+        taskType,
+        weights,
+      });
+      const leader = racePlan.candidates[0];
+      if (racePlan.enabled && leader) {
+        selectedProvider = leader.provider;
+        selectedModel = leader.model;
+        selectedConnectionId = leader.connectionId ?? null;
+        selectionReason = racePlan.reason;
+        autoUsedExplicitRouter = true;
+      }
+    }
+
+    if (!selectedProvider && routingStrategy !== "rules") {
       try {
         const decision = selectWithStrategy(
           routableCandidates,
@@ -430,6 +458,53 @@ export async function resolveAutoStrategyOrder(
     }
 
     const rankedTargets = scoredTargets.map((entry) => entry.target);
+
+    if (racePlan?.enabled && racePlan.planId) {
+      const raceTargets = dedupeTargetsByExecutionKey(
+        racePlan.candidates
+          .map((candidate) => {
+            const fromScored = scoredTargets.find((entry) => {
+              const parsed = parseModel(entry.target.modelStr);
+              const modelId = parsed.model || entry.target.modelStr;
+              return (
+                entry.target.provider === candidate.provider &&
+                modelId === candidate.model &&
+                (!candidate.connectionId || entry.target.connectionId === candidate.connectionId)
+              );
+            })?.target;
+            if (fromScored) return fromScored;
+            return eligibleTargets.find((target) => {
+              const parsed = parseModel(target.modelStr);
+              const modelId = parsed.model || target.modelStr;
+              return (
+                target.provider === candidate.provider &&
+                modelId === candidate.model &&
+                (!candidate.connectionId || target.connectionId === candidate.connectionId)
+              );
+            });
+          })
+          .filter((entry): entry is ResolvedComboTarget => entry !== undefined && entry !== null)
+      );
+
+      if (raceTargets.length >= 2) {
+        config.cobaltRaceWidth = raceTargets.length;
+        config.cobaltRaceTaskType = taskType;
+        config.cobaltRacePlanId = racePlan.planId;
+        orderedTargets = dedupeTargetsByExecutionKey([
+          ...raceTargets,
+          ...rankedTargets,
+          ...eligibleTargets,
+        ]);
+        log.info(
+          "COMBO",
+          `Cobalt race planned: width=${raceTargets.length} task=${taskType} plan=${racePlan.planId} | ${selectionReason}`
+        );
+        return { orderedTargets, autoUsedExplicitRouter };
+      }
+
+      recordMultiModelRaceCancelled(racePlan.planId);
+    }
+
     const selectedTarget =
       scoredTargets.find((entry) => {
         const parsed = parseModel(entry.target.modelStr);

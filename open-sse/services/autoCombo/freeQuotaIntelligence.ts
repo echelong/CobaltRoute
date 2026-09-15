@@ -84,14 +84,20 @@ export interface FreeQuotaIntelligenceSnapshot {
 const observations = new Map<string, QuotaObservation>();
 
 function normalizeTaskType(taskType: string | null | undefined): string {
-  return String(taskType || "default").trim().toLowerCase() || "default";
+  return (
+    String(taskType || "default")
+      .trim()
+      .toLowerCase() || "default"
+  );
 }
 
 function observationKey(taskType: string, provider: string, model: string): string {
   return `${normalizeTaskType(taskType)}\u0000${provider}\u0000${model}`;
 }
 
-function executionKey(candidate: Pick<ProviderCandidate, "provider" | "model" | "connectionId">): string {
+function executionKey(
+  candidate: Pick<ProviderCandidate, "provider" | "model" | "connectionId">
+): string {
   return `${candidate.provider}\u0000${candidate.model}\u0000${candidate.connectionId || ""}`;
 }
 
@@ -114,7 +120,10 @@ function taskPriority(taskType: string): number {
 }
 
 function resetAffinity(candidate: ProviderCandidate): number {
-  if (typeof candidate.resetWindowAffinity === "number" && Number.isFinite(candidate.resetWindowAffinity)) {
+  if (
+    typeof candidate.resetWindowAffinity === "number" &&
+    Number.isFinite(candidate.resetWindowAffinity)
+  ) {
     return clamp01(candidate.resetWindowAffinity);
   }
 
@@ -173,10 +182,7 @@ export function scoreFreeQuotaCandidate(
   const reservePressure = clamp01(scarcity * value * (1 - priority));
 
   let inventoryScore =
-    remaining * 0.5 +
-    reset * 0.15 +
-    expiringOpportunity * 0.2 +
-    (1 - reservePressure) * 0.15;
+    remaining * 0.5 + reset * 0.15 + expiringOpportunity * 0.2 + (1 - reservePressure) * 0.15;
 
   // Near-exhausted accounts should lose before the provider's hard quota gate
   // fires, provided another free option exists. The pool policy below decides
@@ -234,7 +240,11 @@ function applyInventoryPolicy(
 
   // Soft exhaustion gate: do not spend the last few percent of one account if
   // another free account has meaningful headroom.
-  if (survivors.some((entry) => entry.assessment.remainingPercent / 100 > HEALTHY_ALTERNATIVE_THRESHOLD)) {
+  if (
+    survivors.some(
+      (entry) => entry.assessment.remainingPercent / 100 > HEALTHY_ALTERNATIVE_THRESHOLD
+    )
+  ) {
     survivors = survivors.filter(
       (entry) => entry.assessment.remainingPercent / 100 > NEAR_EXHAUSTED_THRESHOLD
     );
@@ -294,8 +304,10 @@ function recordAssessment(
   current.evaluations += 1;
   if (selected) current.selections += 1;
   if (!included) current.protectedEvaluations += 1;
-  if (assessed.assessment.remainingPercent <= SCARCE_THRESHOLD * 100) current.scarceEvaluations += 1;
-  if (assessed.assessment.resetAffinity >= EXPIRING_AFFINITY_THRESHOLD) current.expiringEvaluations += 1;
+  if (assessed.assessment.remainingPercent <= SCARCE_THRESHOLD * 100)
+    current.scarceEvaluations += 1;
+  if (assessed.assessment.resetAffinity >= EXPIRING_AFFINITY_THRESHOLD)
+    current.expiringEvaluations += 1;
   current.avgInventoryScore +=
     (assessed.assessment.inventoryScore - current.avgInventoryScore) / current.evaluations;
   current.latestRemainingPercent = assessed.assessment.remainingPercent;
@@ -309,6 +321,21 @@ function recordAssessment(
     const oldest = [...observations.entries()].sort((a, b) => a[1].updatedAt - b[1].updatedAt)[0];
     if (oldest) observations.delete(oldest[0]);
   }
+}
+
+/**
+ * Return V4's no-side-effect quota-aware candidate pool for higher-level
+ * orchestration such as CobaltRoute's multi-model race planner.
+ */
+export function getFreeQuotaRacePool(
+  pool: ProviderCandidate[],
+  taskType: string
+): ProviderCandidate[] {
+  if (!enabled()) {
+    const healthy = pool.filter((candidate) => candidate.circuitBreakerState !== "OPEN");
+    return healthy.length > 0 ? healthy : pool;
+  }
+  return applyInventoryPolicy(assessPool(pool, normalizeTaskType(taskType)), taskType).candidates;
 }
 
 /**

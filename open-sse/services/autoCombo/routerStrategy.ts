@@ -418,6 +418,9 @@ strategyRegistry.set("sla", slaStrategy); // alias
 strategyRegistry.set("lkgp", lkgpStrategy);
 strategyRegistry.set("adaptive", adaptiveStrategy);
 strategyRegistry.set("cobalt", adaptiveStrategy); // CobaltRoute alias
+strategyRegistry.set("race", adaptiveStrategy); // v5 fallback when a race cannot form
+strategyRegistry.set("cobalt-race", adaptiveStrategy);
+strategyRegistry.set("adaptive-race", adaptiveStrategy);
 
 export function getStrategy(name: string): RouterStrategy {
   const strategy = strategyRegistry.get(name);
