@@ -15,6 +15,7 @@
  */
 
 import { isLocalProvider } from "@/shared/constants/providers";
+import { filterFreeModelQualificationPool } from "@/lib/discovery/freeModelQualification";
 import type { ProviderCandidate, ScoringWeights } from "./scoring.ts";
 import { scorePool } from "./scoring.ts";
 import { getTaskFitness } from "./taskFitness.ts";
@@ -125,6 +126,14 @@ function modelKey(provider: string, model: string): string {
   return `${normalizeIdentity(provider)}\u0000${normalizedModel(provider, model)}`;
 }
 
+function executionKey(candidate: {
+  provider: string;
+  model: string;
+  connectionId?: string;
+}): string {
+  return `${normalizeIdentity(candidate.provider)}\u0000${normalizedModel(candidate.provider, candidate.model)}\u0000${candidate.connectionId || ""}`;
+}
+
 function observationKey(taskType: string, provider: string, model: string): string {
   return `${normalizeTaskType(taskType)}\u0000${modelKey(provider, model)}`;
 }
@@ -162,6 +171,10 @@ export function isHybridLocalProvider(provider: string | null | undefined): bool
   if (!normalized) return false;
   if (isLocalProvider(normalized)) return true;
   return explicitLocalProviderIds().has(normalized);
+}
+
+function isFreeLike(candidate: ProviderCandidate): boolean {
+  return candidate.costPer1MTokens <= 0 || candidate.accountTier === "free";
 }
 
 function taskLocalBias(taskType: string): number {
@@ -217,7 +230,7 @@ function poolMerit(
   const ranked = scorePool(pool, taskType, weights, getTaskFitness);
   if (ranked.length === 0) return null;
   const baseScore = new Map(
-    ranked.map((entry) => [modelKey(entry.provider, entry.model), entry.score])
+    ranked.map((entry) => [executionKey(entry), entry.score])
   );
   const learning = new Map(
     getAdaptiveLearningSnapshot(taskType).map((entry) => [
@@ -228,9 +241,8 @@ function poolMerit(
 
   let best: { merit: number; provider: string; model: string } | null = null;
   for (const candidate of pool) {
-    const key = modelKey(candidate.provider, candidate.model);
-    const base = clamp01(baseScore.get(key) ?? 0);
-    const learned = learnedSignal(learning.get(key));
+    const base = clamp01(baseScore.get(executionKey(candidate)) ?? 0);
+    const learned = learnedSignal(learning.get(modelKey(candidate.provider, candidate.model)));
     const fit = clamp01(getTaskFitness(candidate.model, taskType));
     const quality = clamp01(candidate.quality ?? 0.5);
     const stable = reliability(candidate);
@@ -325,7 +337,7 @@ function appendHybridReason(
 }
 
 /**
- * Select through a local or cloud lane, then let V4+V1 choose the exact model.
+ * Select through a local or cloud lane, then let V6+V4+V1 choose the exact model.
  * Only the ultimately chosen lane calls the adaptive selector, so comparison
  * itself does not create phantom adaptive selections or duplicate learning.
  */
@@ -351,7 +363,22 @@ export function selectHybridLocalCloudCandidate(
   }
 
   const healthy = pool.filter((candidate) => candidate.circuitBreakerState !== "OPEN");
-  const source = healthy.length > 0 ? healthy : pool;
+  let source = healthy.length > 0 ? healthy : pool;
+
+  // Mirror V6's normal adaptive admission before comparing lanes. Otherwise a
+  // quarantined or probation model could make a lane look artificially strong
+  // even though the downstream selector would refuse to spend a request on it.
+  const qualified = filterFreeModelQualificationPool(source);
+  if (qualified.length > 0) source = qualified;
+
+  // Preserve V1's global free-first contract BEFORE splitting local vs cloud.
+  // Without this, a strong paid cloud lane could beat a free local/cloud lane,
+  // then free-only would only be applied inside the already-chosen cloud lane.
+  if (process.env.COBALTROUTE_FREE_ONLY !== "0") {
+    const free = source.filter(isFreeLike);
+    if (free.length > 0) source = free;
+  }
+
   const local = source.filter((candidate) => isHybridLocalProvider(candidate.provider));
   const cloud = source.filter((candidate) => !isHybridLocalProvider(candidate.provider));
   const taskType = normalizeTaskType(context.taskType);
