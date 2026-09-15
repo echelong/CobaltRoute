@@ -18,17 +18,17 @@ CobaltRoute is free-first by default when explicitly free capacity exists. It le
 
 ## CobaltRoute intelligence stack
 
-| Milestone | Capability | What it adds |
-| --- | --- | --- |
-| V1 | Persistent adaptive router | Task-specific `task × provider × model` learning with UCB-style exploration |
-| V2 | Router Brain | Automatic outcome learning plus aggregate routing observability |
-| V3 | Deterministic coding feedback | Test/build/typecheck/lint/schema/tool/patch outcomes teach the router |
-| V4 | Free quota intelligence | Reset-aware free quota treated as expiring inventory |
-| V5 | Verified multi-model race | 2–3 free contenders, first verified answer wins, losers are cancelled |
-| V6 | Free-model discovery | Newly synced free models enter probation, promote on evidence, quarantine on repeated semantic failures |
-| V7 | Protocol compatibility repair | Repairs tool/request/response quirks and learns provider/model incompatibilities |
-| V8 | Hybrid local + cloud | Task-aware local offload with free-first cloud fallback and shared adaptive learning |
-| V9 | Release hardening | CobaltRoute identity, production presets, deterministic benchmark, and release audit |
+| Milestone | Capability                    | What it adds                                                                                            |
+| --------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| V1        | Persistent adaptive router    | Task-specific `task × provider × model` learning with UCB-style exploration                             |
+| V2        | Router Brain                  | Automatic outcome learning plus aggregate routing observability                                         |
+| V3        | Deterministic coding feedback | Test/build/typecheck/lint/schema/tool/patch outcomes teach the router                                   |
+| V4        | Free quota intelligence       | Reset-aware free quota treated as expiring inventory                                                    |
+| V5        | Verified multi-model race     | 2–3 free contenders, first verified answer wins, losers are cancelled                                   |
+| V6        | Free-model discovery          | Newly synced free models enter probation, promote on evidence, quarantine on repeated semantic failures |
+| V7        | Protocol compatibility repair | Repairs tool/request/response quirks and learns provider/model incompatibilities                        |
+| V8        | Hybrid local + cloud          | Task-aware local offload with free-first cloud fallback and shared adaptive learning                    |
+| V9        | Release hardening             | CobaltRoute identity, production presets, deterministic benchmark, and release audit                    |
 
 ## Recommended routing modes
 
@@ -84,6 +84,14 @@ node scripts/cobalt/release-audit.mjs
 
 The audit checks CobaltRoute identity, required V1–V9 files, production preset coverage, upstream attribution, package-identity compatibility, and repository hygiene including the rule that `AGENTS.md` and `CLAUDE.md` are not tracked.
 
+## Public release
+
+CobaltRoute product version: **1.0.0**<br>
+Inherited runtime: **OmniRoute 3.8.51**<br>
+Release tag: `cobaltroute-v1.0.0`
+
+See [CobaltRoute v1.0.0 release notes](docs/cobalt/RELEASE_NOTES_v1.0.0.md).
+
 ## Privacy model
 
 CobaltRoute routing telemetry is deliberately aggregate-oriented. The Cobalt intelligence layers are designed not to persist prompts, responses, credentials, endpoint URLs, or connection IDs. Persistent adaptive state stores aggregate task/provider/model outcome statistics only.
@@ -99,6 +107,6 @@ CobaltRoute does not erase its upstream lineage. OmniRoute remains the base gate
 
 ## Development status
 
-CobaltRoute V1–V8 are merged on `main`. V9 is the release-hardening milestone. A final packaging/tag/release audit remains before the project is declared `100%` public-release ready.
+CobaltRoute V1–V9 are merged on `main`. The `cobaltroute-v1.0.0` release line adds the public CobaltRoute product manifest, packaged Cobalt release surface, and `cobaltroute` CLI alias while intentionally retaining OmniRoute 3.8.51 as the underlying runtime.
 
 **Built by Cobalt.**
