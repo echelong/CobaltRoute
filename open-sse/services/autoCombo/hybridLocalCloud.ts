@@ -221,17 +221,25 @@ function reliability(candidate: ProviderCandidate): number {
   return clamp01(1 - rate);
 }
 
-function poolMerit(
+function buildBaseScores(
   pool: ProviderCandidate[],
   taskType: string,
   weights?: ScoringWeights
+): Map<string, number> {
+  return new Map(
+    scorePool(pool, taskType, weights, getTaskFitness).map((entry) => [
+      executionKey(entry),
+      entry.score,
+    ])
+  );
+}
+
+function poolMerit(
+  pool: ProviderCandidate[],
+  taskType: string,
+  baseScores: ReadonlyMap<string, number>
 ): { merit: number; provider: string; model: string } | null {
   if (pool.length === 0) return null;
-  const ranked = scorePool(pool, taskType, weights, getTaskFitness);
-  if (ranked.length === 0) return null;
-  const baseScore = new Map(
-    ranked.map((entry) => [executionKey(entry), entry.score])
-  );
   const learning = new Map(
     getAdaptiveLearningSnapshot(taskType).map((entry) => [
       modelKey(entry.provider, entry.model),
@@ -241,7 +249,7 @@ function poolMerit(
 
   let best: { merit: number; provider: string; model: string } | null = null;
   for (const candidate of pool) {
-    const base = clamp01(baseScore.get(executionKey(candidate)) ?? 0);
+    const base = clamp01(baseScores.get(executionKey(candidate)) ?? 0);
     const learned = learnedSignal(learning.get(modelKey(candidate.provider, candidate.model)));
     const fit = clamp01(getTaskFitness(candidate.model, taskType));
     const quality = clamp01(candidate.quality ?? 0.5);
@@ -382,8 +390,9 @@ export function selectHybridLocalCloudCandidate(
   const local = source.filter((candidate) => isHybridLocalProvider(candidate.provider));
   const cloud = source.filter((candidate) => !isHybridLocalProvider(candidate.provider));
   const taskType = normalizeTaskType(context.taskType);
-  const localBest = poolMerit(local, taskType, context.weights);
-  const cloudBest = poolMerit(cloud, taskType, context.weights);
+  const baseScores = buildBaseScores(source, taskType, context.weights);
+  const localBest = poolMerit(local, taskType, baseScores);
+  const cloudBest = poolMerit(cloud, taskType, baseScores);
   const bias = taskLocalBias(taskType) + policyBias(policy);
 
   let lane: ProviderCandidate[];
