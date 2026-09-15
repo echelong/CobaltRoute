@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "omniroute": "bin/omniroute.mjs",
-    "omniroute-reset-password": "bin/reset-password.mjs"
+    "omniroute-reset-password": "bin/reset-password.mjs",
+    "cobaltroute": "bin/cobaltroute.mjs"
   },
   "files": [
     "bin/",
@@ -58,7 +59,12 @@
     "!**/*.test.mjs",
     "!**/*.spec.ts",
     "!**/*.spec.tsx",
-    "!**/*.nft.json"
+    "!**/*.nft.json",
+    "UPSTREAM_README.md",
+    "cobaltroute.release.json",
+    "config/cobalt/",
+    "docs/cobalt/",
+    "scripts/cobalt/"
   ],
   "workspaces": [
     "open-sse",
@@ -285,7 +291,10 @@
     "test:unit:serial": "cross-env DISABLE_SQLITE_AUTO_BACKUP=true node --max-old-space-size=8192 --import tsx/esm --import ./open-sse/utils/setupPolyfill.ts --import ./tests/_setup/isolateDataDir.ts --test --test-force-exit --test-concurrency=1 \"tests/unit/serial/**/*.test.ts\"",
     "alibaba:sync-allowlist": "node --import tsx/esm scripts/ops/sync-alibaba-allowlist.mjs",
     "check:vitest-exclusions": "node scripts/check/check-vitest-exclusions.mjs",
-    "i18n:check-new-keys": "node scripts/i18n/check-new-key-coverage.mjs"
+    "i18n:check-new-keys": "node scripts/i18n/check-new-key-coverage.mjs",
+    "cobaltroute:benchmark": "node --import tsx/esm --import ./open-sse/utils/setupPolyfill.ts scripts/cobalt/benchmark-routing.ts",
+    "cobaltroute:release:audit": "node scripts/cobalt/release-audit.mjs",
+    "cobaltroute:public-release:audit": "node scripts/cobalt/public-release-audit.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1120.0",
@@ -534,6 +543,16 @@
     "nanoid": "^3.3.17",
     "monaco-editor": {
       "dompurify": "^3.4.14"
+    }
+  },
+  "cobaltroute": {
+    "productName": "CobaltRoute",
+    "productVersion": "1.0.0",
+    "releaseTag": "cobaltroute-v1.0.0",
+    "builtBy": "Cobalt",
+    "upstreamRuntime": {
+      "name": "omniroute",
+      "version": "3.8.51"
     }
   }
 }

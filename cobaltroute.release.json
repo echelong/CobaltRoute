@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "product": "CobaltRoute",
+  "productVersion": "1.0.0",
+  "releaseTag": "cobaltroute-v1.0.0",
+  "builtBy": "Cobalt",
+  "repository": "https://github.com/echelong/CobaltRoute",
+  "upstream": {
+    "project": "OmniRoute",
+    "package": "omniroute",
+    "runtimeVersion": "3.8.51",
+    "repository": "https://github.com/diegosouzapw/OmniRoute"
+  },
+  "compatibility": {
+    "preserveUpstreamPackageName": true,
+    "preserveOmnirouteCli": true,
+    "provideCobaltRouteCliAlias": true
+  }
+}
