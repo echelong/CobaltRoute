@@ -9,6 +9,7 @@
  *   - LatencyStrategy: prioritizes low p95 latency with reliability weighting
  *   - SLAStrategy: prefers candidates that satisfy latency/error/cost SLOs
  *   - LKGPStrategy: tries last known good provider first
+ *   - AdaptiveStrategy: CobaltRoute task-aware learning + UCB exploration
  */
 
 import type { ProviderCandidate, ScoredProvider, ScoringWeights } from "./scoring.ts";
@@ -17,6 +18,7 @@ import { getTaskFitness } from "./taskFitness.ts";
 import { clamp01 } from "../../utils/number.ts";
 import { rankBySpeed } from "./speedRanking.ts";
 import type { SpeedCandidate } from "./speedRanking.ts";
+import { selectAdaptiveCandidate } from "./adaptiveRouter.ts";
 
 export interface SlaRoutingPolicy {
   targetP95Ms?: number;
@@ -367,6 +369,32 @@ class LKGPStrategyImpl implements RouterStrategy {
   }
 }
 
+// ── AdaptiveStrategy: Cobalt task-aware learning ─────────────────────────────
+
+class AdaptiveStrategyImpl implements RouterStrategy {
+  readonly name = "adaptive";
+  readonly description =
+    "CobaltRoute task-aware adaptive routing with persistent outcomes and UCB exploration";
+
+  select(pool: ProviderCandidate[], context: RoutingContext): RoutingDecision {
+    const selected = selectAdaptiveCandidate(pool, {
+      taskType: context.taskType,
+      weights: context.weights,
+      explorationRate: context.explorationRate,
+    });
+
+    return {
+      provider: selected.provider,
+      model: selected.model,
+      strategy: this.name,
+      reason: selected.reason,
+      candidatesConsidered: selected.candidatesConsidered,
+      finalScore: selected.score,
+      connectionId: selected.connectionId,
+    };
+  }
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const strategyRegistry = new Map<string, RouterStrategy>();
@@ -377,6 +405,7 @@ const costStrategy = new CostStrategyImpl();
 const latencyStrategy = new LatencyStrategyImpl();
 const slaStrategy = new SLAStrategyImpl();
 const lkgpStrategy = new LKGPStrategyImpl();
+const adaptiveStrategy = new AdaptiveStrategyImpl();
 
 strategyRegistry.set("rules", rulesStrategy);
 strategyRegistry.set("score", scoreStrategy);
@@ -387,6 +416,8 @@ strategyRegistry.set("fast", latencyStrategy); // alias
 strategyRegistry.set("sla-aware", slaStrategy);
 strategyRegistry.set("sla", slaStrategy); // alias
 strategyRegistry.set("lkgp", lkgpStrategy);
+strategyRegistry.set("adaptive", adaptiveStrategy);
+strategyRegistry.set("cobalt", adaptiveStrategy); // CobaltRoute alias
 
 export function getStrategy(name: string): RouterStrategy {
   const strategy = strategyRegistry.get(name);
