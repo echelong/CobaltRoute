@@ -64,7 +64,7 @@ test("quality rejection becomes a strong negative adaptive outcome", () => {
   const entry = getAdaptiveLearningSnapshot("analysis")[0];
   assert.ok(entry);
   assert.equal(entry.observations, 1);
-  assert.equal(entry.rewardMean, 0.08);
+  assert.ok(Math.abs(entry.rewardMean - 0.08) < 1e-12);
   assert.equal(entry.negativeOutcomes, 1);
 });
 
