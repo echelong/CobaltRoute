@@ -41,6 +41,7 @@ import {
   RESPONSES_STORE_MARKER,
 } from "./request/openai-responses/helpers.ts";
 import { applyReasoningInputPolicy } from "../services/reasoningInputPolicy.ts";
+import { repairOpenAIRequestProtocol } from "../services/autoCombo/protocolCompatibility.ts";
 
 bootstrapTranslatorRegistry();
 export { register } from "./registry.ts";
@@ -377,6 +378,15 @@ export function translateRequest(
   });
   const preserveResponsesReasoning = sourceFormat === FORMATS.OPENAI_RESPONSES && isReasoner;
 
+  // CobaltRoute v7: repair deterministic OpenAI request-protocol quirks before
+  // format translation. Existing OmniRoute schema coercion remains authoritative.
+  if (sourceFormat === FORMATS.OPENAI) {
+    result = repairOpenAIRequestProtocol(result, {
+      provider: normalizedProvider,
+      model: normalizedModel,
+    });
+  }
+
   // Ensure tool_calls have id; optionally normalize to 9-char for providers like Mistral
   ensureToolCallIds(result, { use9CharId });
 
@@ -486,6 +496,10 @@ export function translateRequest(
                 }
               : credentials;
           result = toOpenAI(model, result, stream, step1Credentials);
+          result = repairOpenAIRequestProtocol(result, {
+            provider: normalizedProvider,
+            model: normalizedModel,
+          });
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
