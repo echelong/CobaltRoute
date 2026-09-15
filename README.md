@@ -92,8 +92,8 @@ CobaltRoute routing telemetry is deliberately aggregate-oriented. The Cobalt int
 
 CobaltRoute does not erase its upstream lineage. OmniRoute remains the base gateway/runtime and retains its license, notices, contributor history, and original documentation. The complete upstream README from the fork base is preserved in [`UPSTREAM_README.md`](UPSTREAM_README.md), while this README documents CobaltRoute-specific behavior.
 
-- Upstream project: https://github.com/diegosouzapw/OmniRoute
-- CobaltRoute repository: https://github.com/echelong/CobaltRoute
+- Upstream project: [diegosouzapw/OmniRoute](https://github.com/diegosouzapw/OmniRoute)
+- CobaltRoute repository: [echelong/CobaltRoute](https://github.com/echelong/CobaltRoute)
 - License: [MIT](LICENSE)
 - Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
