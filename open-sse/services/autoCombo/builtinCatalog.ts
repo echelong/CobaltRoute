@@ -223,6 +223,14 @@ export async function createBuiltinAutoCombo(
     const virtualCombo = await materialize(spec.variant, {
       ...(overlayTier ? { tier: overlayTier } : {}),
     });
+    if (spec.variant === "hybrid") {
+      // virtualFactory keeps legacy variants on LKGP by default. Hybrid is a
+      // CobaltRoute routing strategy, so explicitly point every auto-config
+      // representation at the V8 strategy without changing upstream defaults.
+      virtualCombo.routerStrategy = "hybrid";
+      virtualCombo.autoConfig.routerStrategy = "hybrid";
+      virtualCombo.config.auto.routerStrategy = "hybrid";
+    }
     virtualCombo.name = modelStr;
     virtualCombo.id = modelStr;
     return virtualCombo;
