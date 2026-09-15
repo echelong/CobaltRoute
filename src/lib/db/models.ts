@@ -540,6 +540,14 @@ export async function replaceSyncedAvailableModelsForConnection(
   // returns an unchanged list proves the catalog is still current, so staleness
   // gating in getActiveSyncedCatalog must not treat it as aging regardless.
   if (connectionId) await touchConnectionSyncedModelsAt(connectionId);
+  // CobaltRoute V6: every successful provider model sync is also a discovery
+  // opportunity. This is deliberately best-effort and never blocks model sync.
+  try {
+    const { registerSyncedFreeModels } = await import("../discovery/freeModelQualification");
+    registerSyncedFreeModels(providerId, normalizedModels);
+  } catch {
+    // Discovery qualification is advisory; synced catalog persistence already succeeded.
+  }
   // Return the full unioned list for the provider
   return getSyncedAvailableModels(providerId);
 }
@@ -957,8 +965,7 @@ export function getHiddenModelsByProvider(modality: string = "chat"): Map<string
                   {
                     isHidden: Boolean(record.isHidden),
                     hiddenModalities: record.hiddenModalities as
-                      | Record<string, boolean>
-                      | undefined,
+                      Record<string, boolean> | undefined,
                   },
                   modality
                 )
