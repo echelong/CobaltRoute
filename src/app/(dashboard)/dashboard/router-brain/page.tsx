@@ -4,6 +4,7 @@ import FreeQuotaIntelligencePanel from "./FreeQuotaIntelligencePanel";
 import MultiModelRacePanel from "./MultiModelRacePanel";
 import FreeModelDiscoveryPanel from "./FreeModelDiscoveryPanel";
 import ProtocolCompatibilityPanel from "./ProtocolCompatibilityPanel";
+import HybridLocalCloudPanel from "./HybridLocalCloudPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default function RouterBrainPage() {
       <MultiModelRacePanel />
       <FreeModelDiscoveryPanel />
       <ProtocolCompatibilityPanel />
+      <HybridLocalCloudPanel />
     </>
   );
 }
