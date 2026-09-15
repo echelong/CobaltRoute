@@ -1,5 +1,13 @@
 export type AutoVariant =
-  "coding" | "fast" | "cheap" | "offline" | "smart" | "lkgp" | "chaos" | "race";
+  | "coding"
+  | "fast"
+  | "cheap"
+  | "offline"
+  | "smart"
+  | "lkgp"
+  | "chaos"
+  | "race"
+  | "hybrid";
 
 export interface AutoPrefixParseResult {
   valid: boolean;
@@ -16,6 +24,7 @@ export const VALID_VARIANTS: AutoVariant[] = [
   "lkgp",
   "chaos",
   "race",
+  "hybrid",
 ];
 
 /**
@@ -25,6 +34,7 @@ export const VALID_VARIANTS: AutoVariant[] = [
  * - "auto"         -> { valid: true, variant: undefined } (default)
  * - "auto/coding"  -> { valid: true, variant: "coding" }
  * - "auto/lkgp"    -> { valid: true, variant: "lkgp" }
+ * - "auto/hybrid"  -> { valid: true, variant: "hybrid" }
  * - "auto/"        -> { valid: true, variant: undefined } (default)
  * - "autocoding"   -> { valid: false, error: "Invalid auto prefix format" }
  * - "otherModel"   -> { valid: false, error: "Not an auto-prefixed model" }
