@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProviderCandidate } from "../../open-sse/services/autoCombo/scoring.ts";
+import { parseAutoPrefix } from "../../open-sse/services/autoCombo/autoPrefix.ts";
+import { resolveBuiltinAutoSpec } from "../../open-sse/services/autoCombo/builtinCatalog.ts";
 import {
   getHybridLocalCloudSnapshot,
   isHybridLocalProvider,
@@ -12,6 +14,7 @@ import { resetAdaptiveLearning } from "../../open-sse/services/autoCombo/adaptiv
 import { resetFreeQuotaIntelligence } from "../../open-sse/services/autoCombo/freeQuotaIntelligence.ts";
 
 process.env.COBALTROUTE_ADAPTIVE_PERSIST = "0";
+process.env.COBALTROUTE_DISCOVERY_PERSIST = "0";
 process.env.COBALTROUTE_FREE_QUOTA_INTELLIGENCE = "1";
 process.env.COBALTROUTE_HYBRID_LOCAL_CLOUD = "1";
 process.env.COBALTROUTE_HYBRID_POLICY = "balanced";
@@ -45,7 +48,14 @@ function reset() {
   process.env.COBALTROUTE_HYBRID_LOCAL_CLOUD = "1";
   process.env.COBALTROUTE_HYBRID_POLICY = "balanced";
   delete process.env.COBALTROUTE_LOCAL_PROVIDER_IDS;
+  delete process.env.COBALTROUTE_FREE_ONLY;
 }
+
+test("auto/hybrid is a recognized built-in CobaltRoute variant", () => {
+  reset();
+  assert.deepEqual(parseAutoPrefix("auto/hybrid"), { valid: true, variant: "hybrid" });
+  assert.deepEqual(resolveBuiltinAutoSpec("auto/hybrid", "hybrid"), { variant: "hybrid" });
+});
 
 test("recognizes registered local providers and explicit custom local provider ids", () => {
   reset();
@@ -75,6 +85,30 @@ test("balanced routine work prefers a competitive local model over cloud", () =>
   assert.equal(selected.locality, "local");
   assert.equal(selected.policy, "balanced");
   assert.match(selected.reason, /Hybrid\(balanced local/);
+});
+
+test("global free-first policy is preserved before choosing local versus cloud", () => {
+  reset();
+  const freeLocal = candidate("ollama-local", "free-local", {
+    quality: 0.25,
+    p95LatencyMs: 1500,
+  });
+  const paidCloud = candidate("premium-cloud", "paid-cloud", {
+    accountTier: "pro",
+    costPer1MTokens: 20,
+    quality: 1,
+    p95LatencyMs: 50,
+    latencyStdDev: 5,
+  });
+
+  const selected = selectHybridLocalCloudCandidate([paidCloud, freeLocal], {
+    taskType: "analysis",
+    explorationRate: 0,
+  });
+
+  assert.equal(selected.provider, "ollama-local");
+  assert.equal(selected.locality, "local");
+  assert.equal(selected.cloudCandidates, 0);
 });
 
 test("cloud fallback wins when the local lane is materially weaker", () => {
