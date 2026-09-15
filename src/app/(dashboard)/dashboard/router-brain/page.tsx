@@ -3,6 +3,7 @@ import CodingFeedbackPanel from "./CodingFeedbackPanel";
 import FreeQuotaIntelligencePanel from "./FreeQuotaIntelligencePanel";
 import MultiModelRacePanel from "./MultiModelRacePanel";
 import FreeModelDiscoveryPanel from "./FreeModelDiscoveryPanel";
+import ProtocolCompatibilityPanel from "./ProtocolCompatibilityPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default function RouterBrainPage() {
       <FreeQuotaIntelligencePanel />
       <MultiModelRacePanel />
       <FreeModelDiscoveryPanel />
+      <ProtocolCompatibilityPanel />
     </>
   );
 }

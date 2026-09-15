@@ -8,19 +8,14 @@
  * Built by Cobalt.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { on } from "@/lib/events/eventBus";
 import type { ProviderCandidate, ScoringWeights } from "./scoring.ts";
 import { scorePool } from "./scoring.ts";
 import { getTaskFitness } from "./taskFitness.ts";
 import { clamp01 } from "../../utils/number.ts";
+import { getProtocolCompatibilityScore } from "./protocolCompatibility.ts";
 
 const STORE_VERSION = 1;
 const MAX_ENTRIES = 5_000;
@@ -129,12 +124,16 @@ let loaded = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function normalizeTaskType(taskType: string | null | undefined): string {
-  const normalized = String(taskType || "default").trim().toLowerCase();
+  const normalized = String(taskType || "default")
+    .trim()
+    .toLowerCase();
   return normalized || "default";
 }
 
 function normalizeIdentity(value: string | null | undefined): string {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizedModelForProvider(provider: string, model: string): string {
@@ -456,6 +455,8 @@ export function selectAdaptiveCandidate(
       const reliability = reliabilitySignal(candidate);
       const taskFit = clamp01(getTaskFitness(candidate.model, taskType));
       const free = isFreeLike(candidate) ? 1 : 0;
+      const compatibility = getProtocolCompatibilityScore(candidate.provider, candidate.model);
+      const compatibilityFactor = 0.85 + compatibility * 0.15;
       const ucb = explorationSignal(totalSelections, entry.selections);
 
       const exploitation =
@@ -465,7 +466,9 @@ export function selectAdaptiveCandidate(
         reliability * 0.08 +
         taskFit * 0.05 +
         free * 0.05;
-      const score = clamp01((exploitation + ucb * explorationWeight) / (1 + explorationWeight));
+      const score = clamp01(
+        (exploitation * compatibilityFactor + ucb * explorationWeight) / (1 + explorationWeight)
+      );
 
       return {
         candidate,
@@ -476,6 +479,7 @@ export function selectAdaptiveCandidate(
         reliability,
         taskFit,
         free,
+        compatibility,
         ucb,
         score,
       };
@@ -503,8 +507,9 @@ export function selectAdaptiveCandidate(
       `AdaptiveStrategy(task=${taskType}, score=${winner.score.toFixed(3)}): ` +
       `base=${winner.base.toFixed(3)} learned=${winner.learned.toFixed(3)} ` +
       `quality=${winner.quality.toFixed(3)} reliability=${winner.reliability.toFixed(3)} ` +
-      `taskFit=${winner.taskFit.toFixed(3)} ucb=${winner.ucb.toFixed(3)} ` +
-      `pulls=${winner.entry.selections} outcomes=${winner.entry.observations} ` +
+      `taskFit=${winner.taskFit.toFixed(3)} compat=${winner.compatibility.toFixed(3)} ` +
+      `ucb=${winner.ucb.toFixed(3)} pulls=${winner.entry.selections} ` +
+      `outcomes=${winner.entry.observations} ` +
       `free=${winner.free === 1 ? "yes" : "no"}`,
   };
 }
@@ -615,7 +620,9 @@ export function getAdaptiveBrainSnapshot(): AdaptiveBrainSnapshot {
 function automaticFailureReward(error: string): number {
   const normalized = String(error || "").toLowerCase();
   if (
-    /quality|malformed|invalid tool|tool.*invalid|schema|empty response|empty content/.test(normalized)
+    /quality|malformed|invalid tool|tool.*invalid|schema|empty response|empty content/.test(
+      normalized
+    )
   ) {
     return AUTOMATIC_QUALITY_FAILURE_REWARD;
   }

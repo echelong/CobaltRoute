@@ -91,6 +91,10 @@ import type { AttemptLoopDeps, AttemptLoopState, ExecuteTargetResult } from "./a
 import type { ComboDiagnostics } from "../../utils/error.ts";
 import type { ComboErrorBody, ComboRetryAfter, ResolvedComboTarget } from "./types.ts";
 import type { ResponseValidationConfig } from "./responseValidation.ts";
+import {
+  recordProtocolCompatibilityFailure,
+  recordProtocolCompatibilitySuccess,
+} from "../autoCombo/protocolCompatibility.ts";
 
 export async function executeTargetAttempt(opts: {
   index: number;
@@ -434,6 +438,12 @@ export async function executeTargetAttempt(opts: {
             );
           }
         }
+        recordProtocolCompatibilityFailure({
+          provider,
+          model: modelStr,
+          error: `Quality: ${quality.reason || "response shape failure"}`,
+          status: 502,
+        });
         emit("combo.target.failed", {
           comboName: deps.combo.name,
           targetIndex: i,
@@ -475,6 +485,7 @@ export async function executeTargetAttempt(opts: {
       }
 
       const latencyMs = Date.now() - deps.startTime;
+      recordProtocolCompatibilitySuccess(provider, modelStr);
       emit("combo.target.succeeded", {
         comboName: deps.combo.name,
         targetIndex: i,
@@ -724,6 +735,13 @@ export async function executeTargetAttempt(opts: {
         errorText = String(errorText);
       }
     }
+
+    recordProtocolCompatibilityFailure({
+      provider,
+      model: modelStr,
+      error: errorText,
+      status: result.status,
+    });
 
     const isStreamReadinessFailure =
       (result.status === 502 || result.status === 504) &&

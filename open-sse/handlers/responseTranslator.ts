@@ -14,7 +14,9 @@ import {
 import { restoreClaudeToolName } from "../services/claudeCodeToolRemapper.ts";
 import { extractReplayableResponsesReasoningText } from "../services/reasoningInputPolicy.ts";
 import { sanitizeToolId } from "../translator/helpers/schemaCoercion.ts";
+import { toNumber } from "@/shared/utils/numeric";
 import { stripEmptyOptionalToolArgs } from "../translator/response/openai-responses/pureHelpers.ts";
+import { repairOpenAIProtocolResponse } from "../services/autoCombo/protocolCompatibility.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,16 +26,6 @@ function toRecord(value: unknown): JsonRecord {
 
 function toString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
-}
-
-function toNumber(value: unknown, fallback = 0): number {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && value.trim().length > 0
-        ? Number(value)
-        : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function firstPositiveNumber(...values: unknown[]): number {
@@ -164,6 +156,7 @@ export function translateNonStreamingResponse(
   if (targetFormat === sourceFormat) {
     if (targetFormat === FORMATS.OPENAI) {
       restoreOpenAIToolNames(responseBody, toolNameMap);
+      return repairOpenAIProtocolResponse(responseBody);
     }
     return responseBody;
   }
@@ -653,6 +646,10 @@ export function translateNonStreamingResponse(
     }
   }
 
+  // CobaltRoute v7: normalize deterministic OpenAI-compatible tool-call
+  // quirks before projecting the response into the client's source format.
+  intermediateOpenAI = repairOpenAIProtocolResponse(intermediateOpenAI);
+
   // Phase 3: Translate from OpenAI back to Client Source format
   if (sourceFormat === FORMATS.CLAUDE && sourceFormat !== targetFormat) {
     return convertOpenAINonStreamingToClaude(toRecord(intermediateOpenAI), toolNameMap ?? null);
@@ -736,7 +733,7 @@ function convertOpenAINonStreamingToClaude(
       type: "text",
       text: resolvedText === "" ? "(empty response)" : resolvedText,
     });
-  } else if (!hasTextOrReasoning) {
+  } else if (!hasToolCalls && !hasTextOrReasoning) {
     content.push({
       type: "text",
       text: "(empty response)",

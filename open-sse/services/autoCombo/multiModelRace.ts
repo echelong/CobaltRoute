@@ -23,6 +23,7 @@ import {
 } from "./adaptiveRouter.ts";
 import { getFreeQuotaRacePool, scoreFreeQuotaCandidate } from "./freeQuotaIntelligence.ts";
 import { getFreeModelQualificationState } from "@/lib/discovery/freeModelQualification";
+import { getProtocolCompatibilityScore } from "./protocolCompatibility.ts";
 
 const MAX_RACE_WIDTH = 3;
 const MIN_RACE_WIDTH = 2;
@@ -46,6 +47,7 @@ export interface MultiModelRaceCandidate {
   quality: number;
   reliability: number;
   inventoryScore: number;
+  compatibility: number;
 }
 
 export interface MultiModelRacePlan {
@@ -312,13 +314,16 @@ export function planMultiModelRace(
       const quality = clamp01(candidate.quality ?? 0.5);
       const reliability = reliabilitySignal(candidate);
       const inventoryScore = scoreFreeQuotaCandidate(candidate, { taskType }).inventoryScore;
+      const compatibility = getProtocolCompatibilityScore(candidate.provider, candidate.model);
+      const compatibilityFactor = 0.85 + compatibility * 0.15;
       const score = clamp01(
-        baseScore * 0.38 +
+        (baseScore * 0.38 +
           learnedScore * 0.2 +
           taskFit * 0.1 +
           quality * 0.1 +
           reliability * 0.08 +
-          inventoryScore * 0.14
+          inventoryScore * 0.14) *
+          compatibilityFactor
       );
       return {
         provider: candidate.provider,
@@ -331,6 +336,7 @@ export function planMultiModelRace(
         quality,
         reliability,
         inventoryScore,
+        compatibility,
       } satisfies MultiModelRaceCandidate;
     })
     .sort(
