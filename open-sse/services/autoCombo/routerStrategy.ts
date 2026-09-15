@@ -9,7 +9,7 @@
  *   - LatencyStrategy: prioritizes low p95 latency with reliability weighting
  *   - SLAStrategy: prefers candidates that satisfy latency/error/cost SLOs
  *   - LKGPStrategy: tries last known good provider first
- *   - AdaptiveStrategy: CobaltRoute task-aware learning + UCB exploration
+ *   - AdaptiveStrategy: CobaltRoute task-aware learning + quota inventory + UCB exploration
  */
 
 import type { ProviderCandidate, ScoredProvider, ScoringWeights } from "./scoring.ts";
@@ -18,7 +18,7 @@ import { getTaskFitness } from "./taskFitness.ts";
 import { clamp01 } from "../../utils/number.ts";
 import { rankBySpeed } from "./speedRanking.ts";
 import type { SpeedCandidate } from "./speedRanking.ts";
-import { selectAdaptiveCandidate } from "./adaptiveRouter.ts";
+import { selectQuotaAwareAdaptiveCandidate } from "./freeQuotaIntelligence.ts";
 
 export interface SlaRoutingPolicy {
   targetP95Ms?: number;
@@ -369,15 +369,15 @@ class LKGPStrategyImpl implements RouterStrategy {
   }
 }
 
-// ── AdaptiveStrategy: Cobalt task-aware learning ─────────────────────────────
+// ── AdaptiveStrategy: Cobalt task-aware learning + quota inventory ───────────
 
 class AdaptiveStrategyImpl implements RouterStrategy {
   readonly name = "adaptive";
   readonly description =
-    "CobaltRoute task-aware adaptive routing with persistent outcomes and UCB exploration";
+    "CobaltRoute task-aware adaptive routing with free-quota inventory, persistent outcomes and UCB exploration";
 
   select(pool: ProviderCandidate[], context: RoutingContext): RoutingDecision {
-    const selected = selectAdaptiveCandidate(pool, {
+    const selected = selectQuotaAwareAdaptiveCandidate(pool, {
       taskType: context.taskType,
       weights: context.weights,
       explorationRate: context.explorationRate,
