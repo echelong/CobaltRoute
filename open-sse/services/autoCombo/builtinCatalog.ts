@@ -41,6 +41,8 @@ export const AUTO_TEMPLATE_VARIANTS: Record<string, AutoVariant | undefined> = {
   "auto/cheap": "cheap",
   "auto/offline": "offline",
   "auto/smart": "smart",
+  // CobaltRoute v8: local/self-hosted first when competitive, with cloud fallback.
+  "auto/hybrid": "hybrid",
   "auto/claude-opus": "smart",
   "auto/claude-sonnet": "coding",
   "auto/best-free": "cheap",
@@ -221,6 +223,14 @@ export async function createBuiltinAutoCombo(
     const virtualCombo = await materialize(spec.variant, {
       ...(overlayTier ? { tier: overlayTier } : {}),
     });
+    if (spec.variant === "hybrid") {
+      // virtualFactory keeps legacy variants on LKGP by default. Hybrid is a
+      // CobaltRoute routing strategy, so explicitly point every auto-config
+      // representation at the V8 strategy without changing upstream defaults.
+      virtualCombo.routerStrategy = "hybrid";
+      virtualCombo.autoConfig.routerStrategy = "hybrid";
+      virtualCombo.config.auto.routerStrategy = "hybrid";
+    }
     virtualCombo.name = modelStr;
     virtualCombo.id = modelStr;
     return virtualCombo;
