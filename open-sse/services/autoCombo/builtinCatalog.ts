@@ -41,6 +41,8 @@ export const AUTO_TEMPLATE_VARIANTS: Record<string, AutoVariant | undefined> = {
   "auto/cheap": "cheap",
   "auto/offline": "offline",
   "auto/smart": "smart",
+  // CobaltRoute v8: local/self-hosted first when competitive, with cloud fallback.
+  "auto/hybrid": "hybrid",
   "auto/claude-opus": "smart",
   "auto/claude-sonnet": "coding",
   "auto/best-free": "cheap",
