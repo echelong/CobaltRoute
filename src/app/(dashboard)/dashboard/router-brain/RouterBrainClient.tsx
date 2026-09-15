@@ -96,9 +96,16 @@ export default function RouterBrainClient() {
   }, []);
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(timer);
+    // Schedule the initial refresh rather than synchronously entering a state-updating
+    // callback from the effect body. This keeps the effect focused on subscription/
+    // timer setup and satisfies React's set-state-in-effect rule.
+    const initialTimer = window.setTimeout(() => void load(), 0);
+    const refreshTimer = window.setInterval(() => void load(), 5000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(refreshTimer);
+    };
   }, [load]);
 
   const topLeaders = useMemo(() => brain.leaders.slice(0, 12), [brain.leaders]);
