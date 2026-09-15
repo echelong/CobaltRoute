@@ -1086,6 +1086,13 @@ export async function createVirtualAutoComboFromPrepared(
       // LKGP is default for all auto variants, this variant just explicitly names it.
       // Use default weights.
       break;
+    case "race":
+      // CobaltRoute v5: small provider-diverse verified race. Runtime quota
+      // intelligence and learned task outcomes choose the actual 2–3 contenders.
+      weights = { ...MODE_PACKS["quality-first"] };
+      explorationRate = 0;
+      routerStrategy = "race";
+      break;
     case "chaos":
       // Chaos mode: select top-N most stable models and fan them out in parallel
       // (strategy "fusion"). Prioritize health + stability via the chaos-mode pack.

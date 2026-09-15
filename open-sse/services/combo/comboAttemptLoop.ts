@@ -48,6 +48,15 @@ import {
 } from "./comboPredicates.ts";
 import { evaluateExecuteTargetGates } from "./executeTargetGates.ts";
 import { executeTargetAttempt } from "./executeTargetAttempt.ts";
+import {
+  isMultiModelRaceBarrier,
+  isMultiModelRaceMember,
+  recordMultiModelRaceDispatch,
+  recordMultiModelRaceExhausted,
+  recordMultiModelRaceFailure,
+  recordMultiModelRaceWinner,
+  resolveMultiModelRaceWidth,
+} from "../autoCombo/multiModelRace.ts";
 import type { AttemptLoopDeps, AttemptLoopState, ExecuteTargetResult } from "./attemptLoopTypes.ts";
 
 export type DispatchWithCooldownRetryExtra = {
@@ -208,11 +217,27 @@ export async function dispatchWithCooldownRetry(opts: {
       const hasProtectedPriorityTarget =
         deps.strategy === "priority" &&
         state.orderedTargets.some((target) => target.fallbackOnlyOnQuotaExhaustion === true);
+      const cobaltRacePlanId =
+        typeof deps.config.cobaltRacePlanId === "string" && deps.config.cobaltRacePlanId
+          ? deps.config.cobaltRacePlanId
+          : null;
+      const cobaltRaceWidth = cobaltRacePlanId
+        ? resolveMultiModelRaceWidth(deps.config.cobaltRaceWidth, state.orderedTargets.length)
+        : 0;
 
       const executeTarget = async (i: number): Promise<ExecuteTargetResult> => {
+        if (anySuccess) return null;
         const gate = await extra.evaluateGates({ index: i, state, deps });
         if (gate.kind === "skip") return gate.result;
-        return extra.executeAttempt({
+        if (anySuccess) return null;
+
+        const target = state.orderedTargets[i];
+        const raceMember = cobaltRacePlanId !== null && isMultiModelRaceMember(i, cobaltRaceWidth);
+        if (raceMember) {
+          recordMultiModelRaceDispatch(cobaltRacePlanId, target.provider, target.modelStr);
+        }
+
+        const result = await extra.executeAttempt({
           index: i,
           state,
           deps,
@@ -220,6 +245,11 @@ export async function dispatchWithCooldownRetry(opts: {
           profile: gate.profile,
           protectedPriorityTarget: gate.protectedPriorityTarget,
         });
+
+        if (raceMember && !result?.ok) {
+          recordMultiModelRaceFailure(cobaltRacePlanId, target.provider, target.modelStr);
+        }
+        return result;
       };
 
       for (let i = 0; i < state.orderedTargets.length; i++) {
@@ -235,6 +265,10 @@ export async function dispatchWithCooldownRetry(opts: {
             const res = await executeTarget(i);
             if (res && !anySuccess) {
               if (res.ok) {
+                const target = state.orderedTargets[i];
+                if (cobaltRacePlanId && isMultiModelRaceMember(i, cobaltRaceWidth)) {
+                  recordMultiModelRaceWinner(cobaltRacePlanId, target.provider, target.modelStr);
+                }
                 anySuccess = true;
                 globalResolve!(res.response!);
                 for (const [idx, ac] of state.abortControllers.entries()) {
@@ -266,7 +300,20 @@ export async function dispatchWithCooldownRetry(opts: {
         runningTasks.add(task);
         task.finally(() => runningTasks.delete(task));
 
-        if (
+        if (cobaltRacePlanId && isMultiModelRaceMember(i, cobaltRaceWidth)) {
+          // Launch the first N race contenders without waiting between them.
+          // The final race member is a barrier: first quality-verified success
+          // wins, otherwise we wait until the race group settles before
+          // continuing into the normal ordered fallback tail.
+          if (!isMultiModelRaceBarrier(i, cobaltRaceWidth)) {
+            continue;
+          }
+          await Promise.race([globalPromise, Promise.all([...runningTasks]), loopSafetyPromise]);
+          markLoopExpiredIfSafetyFired();
+          if (!anySuccess && !loopSafetyFired) {
+            recordMultiModelRaceExhausted(cobaltRacePlanId);
+          }
+        } else if (
           zeroLatencyOptimizationsEnabled &&
           deps.config.hedging &&
           !hasProtectedPriorityTarget &&
@@ -277,10 +324,11 @@ export async function dispatchWithCooldownRetry(opts: {
             setTimeout(r, hedgeDelay);
           });
           await Promise.race([task, globalPromise, timeoutPromise, loopSafetyPromise]);
+          markLoopExpiredIfSafetyFired();
         } else {
           await Promise.race([task, globalPromise, loopSafetyPromise]);
+          markLoopExpiredIfSafetyFired();
         }
-        markLoopExpiredIfSafetyFired();
 
         // Global combo timeout check: after each target completes, stop trying
         // further targets if the total elapsed time exceeds extra.comboTimeoutMs.
